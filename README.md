@@ -28,7 +28,30 @@ gold_region_activity_5m          pings & trucks per region per 5-minute window
 | Table DDL | versioned SQL in `src/migrations`, applied by a bundle job |
 | Targets | `dev` (manual) · `test` (hourly) · `prod` (every 15 min, deploy-only) |
 
-See [DESIGN.md](DESIGN.md) for the reasoning behind each of those.
+### Documentation
+
+| | |
+|---|---|
+| [DESIGN.md](DESIGN.md) | the choices and trade-offs, written to be defended |
+| [EXPLAINER.md](EXPLAINER.md) | how it all works, in five passes from plain English to the theory underneath |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | every failure hit while building this, with cause and fix |
+
+### Verified on a real deployment
+
+All three targets deployed and ran on Databricks Free Edition. Dev numbers:
+
+```
+bronze_pings_raw              247     raw rows across 20 generated files
+silver_pings                  207     = 247 − 20 duplicates − 20 invalid
+silver_pings_quarantine        20     one null-latitude row per file, kept not dropped
+gold_truck_current_position    20     one row per truck, joined to the dimension
+gold_region_activity_5m         4     4 regions × one 5-minute window
+```
+
+Per-target config visibly differs: 20 / 10 / 5 generator batches produce
+207 / 94 / 38 Silver rows in dev / test / prod. Re-running `medallion_job` with
+no new data left every count unchanged — the pipeline is idempotent in practice,
+not just in principle.
 
 ---
 
