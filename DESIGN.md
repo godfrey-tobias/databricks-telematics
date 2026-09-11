@@ -91,8 +91,10 @@ bundle variable, and no code branches on environment: schema (`telematics.dev` /
 `test` / `prod`), landing and checkpoint volume paths, job names, schedule
 (paused / hourly / every 15 minutes) and generated data volume (20 / 10 / 5
 batches). `dev` uses `mode: development`; `prod` uses `mode: production` with an
-explicit `run_as` and a bundle root under `/Workspace/Shared` rather than a
-user's home.
+explicit `run_as`. Prod's bundle root is deliberately *not* `/Workspace/Shared`
+— the CLI rightly warns that it is writable by every workspace user, which is
+the opposite of a deploy-only prod. On a single-identity workspace the
+deploying principal's home is the restricted folder.
 
 In a real workspace the separation would also be a grant model: the prod schema
 would be owned by a service principal, with humans holding `SELECT` and job

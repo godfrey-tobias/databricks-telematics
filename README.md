@@ -143,7 +143,7 @@ databricks bundle validate -t prod && databricks bundle deploy -t prod && databr
 | Schedule | paused (manual) | hourly | every 15 minutes |
 | Generated batches | 20 | 10 | 5 |
 | Bundle mode | `development` | default | `production` |
-| Bundle root | user home | user home | `/Workspace/Shared` |
+| Bundle root | user home | user home | restricted home path |
 
 ## 4. Verify
 
