@@ -1,0 +1,68 @@
+name: bundle
+
+# Validate every target on every push and PR, then deploy `dev` on main.
+# `test` and `prod` are intentionally NOT deployed automatically — see the
+# commented job at the bottom and the note in DESIGN.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+jobs:
+  validate:
+    name: validate all targets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: databricks/setup-cli@main
+
+      # Validation is the cheap gate: it catches a malformed databricks.yml, a
+      # bad variable reference or a notebook path typo before anything is
+      # deployed, and it runs for all three targets so a change that only
+      # breaks prod cannot pass on dev.
+      - name: validate dev
+        run: databricks bundle validate -t dev
+      - name: validate test
+        run: databricks bundle validate -t test
+      - name: validate prod
+        run: databricks bundle validate -t prod
+
+  deploy-dev:
+    name: deploy dev
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: databricks/setup-cli@main
+
+      - name: deploy dev
+        run: databricks bundle deploy -t dev
+
+      # Deploying makes the migration available; running applies it. Keeping
+      # them as two steps is the point — a deploy never changes data on its own.
+      - name: run the medallion job
+        run: databricks bundle run medallion_job -t dev
+
+  # Promotion to test and prod is deliberately not wired to a push.
+  #
+  #   deploy-prod:
+  #     needs: deploy-dev
+  #     environment: prod        # GitHub environment with required reviewers
+  #     steps:
+  #       - run: databricks bundle deploy -t prod
+  #       - run: databricks bundle run medallion_job -t prod
+  #
+  # With a real workspace this authenticates as a service principal via OIDC
+  # (`databricks/setup-cli` + `id-token: write`) rather than a PAT, so there is
+  # no long-lived credential in GitHub at all, and the principal — not a human —
+  # is the only identity with write access to the prod schema.
