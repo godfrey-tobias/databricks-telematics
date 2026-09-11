@@ -90,23 +90,21 @@ foreach ($t in @('dev', 'test', 'prod')) {
     Add-Line ''
     Add-Query $t "SELECT version, filename, applied_at, applied_by, statements FROM schema_migrations ORDER BY version"
 
-    Add-Line '### The promoted column change (migration 002)'
+    Add-Line '### The promoted column changes (migrations 002 and 003)'
     Add-Line ''
-    Add-Query $t "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '$t' AND table_name = 'gold_truck_current_position' AND column_name IN ('in_geofence', 'geofence_name') ORDER BY column_name"
+    Add-Query $t "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '$t' AND table_name = 'gold_truck_current_position' AND column_name IN ('in_geofence', 'geofence_name', 'capacity_tons') ORDER BY column_name"
     Add-Query $t "SELECT geofence_name, in_geofence, count(*) AS trucks FROM gold_truck_current_position GROUP BY geofence_name, in_geofence ORDER BY in_geofence DESC"
+    Add-Query $t "SELECT truck_id, capacity_lbs, capacity_tons, in_geofence FROM gold_truck_current_position ORDER BY truck_id LIMIT 5"
 }
 
-Add-Line '## Still to capture from the UI'
+Add-Line '## Screenshots'
 Add-Line ''
-Add-Line 'The brief asks for a 3-5 minute recording or screenshots. This file covers the'
-Add-Line 'data; the following need the workspace UI:'
+Add-Line 'The workspace-UI evidence the brief asks for is captured in `evidence/`,'
+Add-Line 'with `evidence/README.md` mapping each image to the requirement it satisfies:'
+Add-Line 'the CLI deploying to all three targets, the jobs and their differing schedules'
+Add-Line 'in Workflows, a successful run graph, the joined Gold table, and the before/'
+Add-Line 'after of a column change promoted to prod through deploy alone.'
 Add-Line ''
-Add-Line '- [ ] `databricks bundle deploy` succeeding for all three targets, in a terminal'
-Add-Line '- [ ] the three job pairs in Workflows, showing their different names and schedules'
-Add-Line '- [ ] a successful `medallion_job` run graph (migrations -> bronze -> silver -> gold)'
-Add-Line '- [ ] `gold_truck_current_position` in the data explorer, with the joined columns'
-Add-Line '- [ ] `DESCRIBE TABLE gold_truck_current_position` in prod, before and after migration 002'
-Add-Line '- [ ] `SELECT * FROM schema_migrations` in prod, showing both versions and timestamps'
 
 $path = Join-Path $root $OutFile
 [System.IO.File]::WriteAllText($path, ($lines -join "`r`n") + "`r`n",

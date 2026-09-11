@@ -36,6 +36,7 @@ gold_region_activity_5m          pings & trucks per region per 5-minute window
 | [EXPLAINER.md](EXPLAINER.md) | how it all works, in five passes from plain English to the theory underneath |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | every failure hit while building this, with cause and fix |
 | [EVIDENCE.md](EVIDENCE.md) | live figures read back from all three targets; regenerate with `scripts/capture-evidence.ps1` |
+| [evidence/](evidence/) | screenshots from the workspace, each mapped to the requirement it satisfies |
 
 ### Verified on a real deployment
 
@@ -191,10 +192,17 @@ the join carrying driver/depot/region into Gold, and prints the migration ledger
 
 ## 5. The promotion demo — a column change reaching prod through deploy only
 
-Migration `002_add_geofence_to_gold.sql` adds `in_geofence` and `geofence_name`
-to `gold_truck_current_position` and backfills them. It was promoted
-dev -> test -> prod on the real workspace; the ledger timestamps in
-[EVIDENCE.md](EVIDENCE.md) are from that run.
+Two migrations have been promoted this way on the real workspace.
+`002_add_geofence_to_gold.sql` adds `in_geofence` and `geofence_name`;
+`003_add_capacity_tons.sql` adds `capacity_tons`, derived from `capacity_lbs`.
+Both add a column and backfill it, and both reached prod through
+`bundle deploy` + `bundle run` and nothing else.
+
+The 003 promotion is captured step by step in [evidence/](evidence/) — prod
+before (16 rows in `DESCRIBE`), the deploy, prod after (17 rows, `capacity_tons`
+at position 14), the ledger, and the column populated. The ledger timestamps
+show it landing in dev at 15:27, test at 15:39 and prod at 15:40, hours after
+001 and 002.
 
 **Option A — hold the migration back, then release it.** The runner accepts a
 `migrate_through` job parameter, the same idea as Flyway's `target` property.
