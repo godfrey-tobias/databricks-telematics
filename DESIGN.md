@@ -171,7 +171,13 @@ recorded as its own migration so the ledger still tells the truth.
 targets on every push and PR, then deploys and runs `dev` on `main`. Validating
 all three is the point: a change that only breaks prod cannot pass on dev.
 
-It authenticates with a PAT in repo secrets, which is fine for Free Edition and
+Secrets are optional. A `preflight` job decides whether `DATABRICKS_HOST` and
+`DATABRICKS_TOKEN` exist and the Databricks jobs key off its output, so a clone
+without credentials shows a green build with an explanatory notice rather than a
+failure that means nothing. It has to be a job output rather than a job-level
+`if`, because the `secrets` context is not available there.
+
+When they are set, it authenticates with a PAT, which is fine for Free Edition and
 wrong for anything real. The path forward is OIDC — GitHub's token exchanged for
 a Databricks service principal credential, so no long-lived secret exists — plus
 a GitHub Environment on the prod job with required reviewers, so promotion needs

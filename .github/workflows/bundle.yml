@@ -11,14 +11,44 @@ on:
     branches: [main]
   workflow_dispatch:
 
-env:
-  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-
 jobs:
+  # Secrets are optional here. Wiring live credentials to a Free Edition
+  # workspace is a judgement call, and a repo without them should still show a
+  # green build rather than a failure that means nothing. So this job decides
+  # whether credentials exist and the rest of the workflow keys off its output.
+  #
+  # It has to be a job output: the `secrets` context is not available in a
+  # job-level `if`, so "skip when unset" cannot be expressed directly.
+  preflight:
+    name: check credentials
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          if [ -n "$DATABRICKS_HOST" ] && [ -n "$DATABRICKS_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Databricks credentials found — validating and deploying dev."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DATABRICKS_HOST / DATABRICKS_TOKEN are not set, so the \
+            Databricks jobs are skipped. Set them as repository secrets to enable \
+            them; see DESIGN.md for how this would be wired with OIDC and a service \
+            principal in a real workspace."
+          fi
+
   validate:
     name: validate all targets
+    needs: preflight
+    if: needs.preflight.outputs.configured == 'true'
     runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +67,12 @@ jobs:
 
   deploy-dev:
     name: deploy dev
-    needs: validate
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [preflight, validate]
+    if: needs.preflight.outputs.configured == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
