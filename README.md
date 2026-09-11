@@ -35,6 +35,7 @@ gold_region_activity_5m          pings & trucks per region per 5-minute window
 | [DESIGN.md](DESIGN.md) | the choices and trade-offs, written to be defended |
 | [EXPLAINER.md](EXPLAINER.md) | how it all works, in five passes from plain English to the theory underneath |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | every failure hit while building this, with cause and fix |
+| [EVIDENCE.md](EVIDENCE.md) | live figures read back from all three targets; regenerate with `scripts/capture-evidence.ps1` |
 
 ### Verified on a real deployment
 
