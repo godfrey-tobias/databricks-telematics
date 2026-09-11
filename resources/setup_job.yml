@@ -1,0 +1,61 @@
+# Setup job — run on demand to (re)seed an environment.
+#
+#   apply_migrations  -> create/alter every table from versioned SQL
+#   seed_truck_details-> idempotent MERGE of the static ~20-truck dimension
+#   generate_pings    -> drop synthetic ping JSON into the landing volume
+#
+# Safe to re-run: every task converges rather than overwrites.
+
+resources:
+  jobs:
+    setup_job:
+      name: telematics_setup_${var.env_label}
+      max_concurrent_runs: 1
+      timeout_seconds: 3600
+      tags:
+        project: telematics
+        env: ${var.env_label}
+        managed_by: asset_bundle
+
+      parameters:
+        - name: pings_batches
+          default: ${var.pings_batches}
+        - name: migrate_through
+          # Highest migration version to apply, Flyway-style. Defaults to "all".
+          # Used by the promotion demo to hold a migration back on purpose.
+          default: "9999"
+
+      tasks:
+        - task_key: apply_migrations
+          notebook_task:
+            notebook_path: ../src/jobs/run_migrations.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.env_schema}
+              migrate_through: "{{job.parameters.migrate_through}}"
+              geofence_name: ${var.geofence_name}
+              geofence_min_lat: ${var.geofence_min_lat}
+              geofence_max_lat: ${var.geofence_max_lat}
+              geofence_min_lon: ${var.geofence_min_lon}
+              geofence_max_lon: ${var.geofence_max_lon}
+
+        - task_key: seed_truck_details
+          depends_on:
+            - task_key: apply_migrations
+          notebook_task:
+            notebook_path: ../src/jobs/seed_truck_details.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.env_schema}
+
+        - task_key: generate_pings
+          depends_on:
+            - task_key: seed_truck_details
+          notebook_task:
+            notebook_path: ../src/jobs/generate_pings.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.env_schema}
+              landing_volume: ${var.landing_volume}
+              batches: "{{job.parameters.pings_batches}}"
+              sleep_seconds: ${var.pings_sleep_seconds}
