@@ -82,49 +82,54 @@ validated = typed.withColumn("reject_reason", reject_reason)
 
 
 def write_batch(batch_df, batch_id):
-    """Land one micro-batch. Re-running a batch id produces the same table."""
-    batch_df = batch_df.persist()
-    try:
-        clean = (
-            batch_df.filter(F.col("reject_reason").isNull())
-            .select("ping_id", "truck_id", "event_ts", "event_date",
-                    "latitude", "longitude", "event_ts_raw",
-                    "_source_file", "_ingested_at", "_processed_at")
-        )
-        merge_into(spark, clean, TARGET, keys=["ping_id"], mode="insert_only",
-                   sequence_col="_ingested_at")
+    """Land one micro-batch. Re-running a batch id produces the same table.
 
-        rejects = (
-            batch_df.filter(F.col("reject_reason").isNotNull())
-            .withColumn(
-                # A rejected row may have a null truck_id or timestamp, so the
-                # Silver key is not usable. Fingerprint the whole row plus its
-                # source file instead, so re-processing cannot duplicate it.
-                "reject_id",
-                F.sha2(
-                    F.concat_ws(
-                        "||",
-                        F.coalesce(F.col("truck_id"), F.lit("")),
-                        F.coalesce(F.col("event_ts_raw"), F.lit("")),
-                        F.coalesce(F.col("latitude").cast("string"), F.lit("")),
-                        F.coalesce(F.col("longitude").cast("string"), F.lit("")),
-                        F.coalesce(F.col("_source_file"), F.lit("")),
-                    ),
-                    256,
+    No `.persist()` on the batch: serverless compute rejects it outright
+    ([NOT_SUPPORTED_WITH_SERVERLESS] PERSIST TABLE). The batch is therefore
+    evaluated once per branch. That is correct — a micro-batch is a fixed set
+    of input files, so recomputation yields identical rows — and cheap at this
+    volume. At scale the answer is a wider micro-batch, not a cache.
+    """
+    clean = (
+        batch_df.filter(F.col("reject_reason").isNull())
+        .select("ping_id", "truck_id", "event_ts", "event_date",
+                "latitude", "longitude", "event_ts_raw",
+                "_source_file", "_ingested_at", "_processed_at")
+    )
+    merge_into(spark, clean, TARGET, keys=["ping_id"], mode="insert_only",
+               sequence_col="_ingested_at")
+
+    rejects = (
+        batch_df.filter(F.col("reject_reason").isNotNull())
+        .withColumn(
+            # A rejected row may have a null truck_id or timestamp, so the
+            # Silver key is not usable. Fingerprint the whole row plus its
+            # source file instead, so re-processing cannot duplicate it.
+            "reject_id",
+            F.sha2(
+                F.concat_ws(
+                    "||",
+                    F.coalesce(F.col("truck_id"), F.lit("")),
+                    F.coalesce(F.col("event_ts_raw"), F.lit("")),
+                    F.coalesce(F.col("latitude").cast("string"), F.lit("")),
+                    F.coalesce(F.col("longitude").cast("string"), F.lit("")),
+                    F.coalesce(F.col("_source_file"), F.lit("")),
                 ),
-            )
-            .withColumn("_quarantined_at", F.current_timestamp())
-            .select("reject_id", "truck_id", "event_ts_raw", "latitude",
-                    "longitude", "reject_reason", "_source_file",
-                    "_quarantined_at")
+                256,
+            ),
         )
-        merge_into(spark, rejects, QUARANTINE, keys=["reject_id"],
-                   mode="insert_only")
+        .withColumn("_quarantined_at", F.current_timestamp())
+        .select("reject_id", "truck_id", "event_ts_raw", "latitude",
+                "longitude", "reject_reason", "_source_file",
+                "_quarantined_at")
+    )
+    merge_into(spark, rejects, QUARANTINE, keys=["reject_id"],
+               mode="insert_only")
 
-        print(f"[silver] batch {batch_id}: {clean.count()} clean, "
-              f"{rejects.count()} quarantined")
-    finally:
-        batch_df.unpersist()
+    # Deliberately no per-branch count(): without a cache each count is another
+    # full pass over the batch. The post-stream cells below report the same
+    # numbers from the tables, once.
+    print(f"[silver] batch {batch_id}: merged")
 
 
 writer = (

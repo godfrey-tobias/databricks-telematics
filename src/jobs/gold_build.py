@@ -131,31 +131,34 @@ def build_region_activity(batch_df, trucks):
 
 
 def write_batch(batch_df, batch_id):
-    batch_df = batch_df.persist()
-    try:
-        if batch_df.isEmpty():
-            print(f"[gold] batch {batch_id}: empty, nothing to do")
-            return
+    """Build both Gold outputs from one micro-batch.
 
-        # Read the static side per micro-batch so dimension changes are picked
-        # up without restarting the stream.
-        trucks = spark.read.table(DIMENSION).select(
-            "truck_id", "make", "model", "capacity_lbs",
-            "home_depot", "region", "driver",
-        )
+    No `.persist()`: serverless compute rejects it
+    ([NOT_SUPPORTED_WITH_SERVERLESS] PERSIST TABLE), so the batch is evaluated
+    once per output. Correct either way — a micro-batch is a fixed set of input
+    files — and the extra pass is cheap at this volume.
+    """
+    if batch_df.isEmpty():
+        print(f"[gold] batch {batch_id}: empty, nothing to do")
+        return
 
-        positions = build_current_position(batch_df, trucks)
-        merge_into(spark, positions, CURRENT_POSITION, keys=["truck_id"],
-                   mode="upsert", sequence_col="last_event_ts")
+    # Read the static side per micro-batch so dimension changes are picked up
+    # without restarting the stream.
+    trucks = spark.read.table(DIMENSION).select(
+        "truck_id", "make", "model", "capacity_lbs",
+        "home_depot", "region", "driver",
+    )
 
-        activity = build_region_activity(batch_df, trucks)
-        if activity is not None:
-            merge_into(spark, activity, REGION_ACTIVITY,
-                       keys=["region", "window_start"], mode="upsert")
+    positions = build_current_position(batch_df, trucks)
+    merge_into(spark, positions, CURRENT_POSITION, keys=["truck_id"],
+               mode="upsert", sequence_col="last_event_ts")
 
-        print(f"[gold] batch {batch_id}: {positions.count()} truck(s) updated")
-    finally:
-        batch_df.unpersist()
+    activity = build_region_activity(batch_df, trucks)
+    if activity is not None:
+        merge_into(spark, activity, REGION_ACTIVITY,
+                   keys=["region", "window_start"], mode="upsert")
+
+    print(f"[gold] batch {batch_id}: merged")
 
 
 # COMMAND ----------
