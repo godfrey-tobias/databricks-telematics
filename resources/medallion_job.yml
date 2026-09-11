@@ -1,0 +1,80 @@
+# Medallion job — Bronze -> Silver -> Gold.
+#
+# Migrations run first on every execution, so a structural change reaches an
+# environment as soon as the bundle is deployed and the job runs. That is the
+# only path by which any table in `prod` ever changes.
+#
+# Each task runs its stream with Trigger.AvailableNow: it picks up from its
+# checkpoint, drains whatever has arrived, and stops. That keeps serverless
+# quota usage bounded while still exercising real streaming semantics
+# (checkpointing, restart safety, exactly-once progress tracking).
+
+resources:
+  jobs:
+    medallion_job:
+      name: telematics_medallion_${var.env_label}
+      max_concurrent_runs: 1
+      timeout_seconds: 7200
+      tags:
+        project: telematics
+        env: ${var.env_label}
+        managed_by: asset_bundle
+
+      schedule:
+        quartz_cron_expression: ${var.pipeline_schedule_cron}
+        timezone_id: UTC
+        pause_status: ${var.pipeline_schedule_status}
+
+      parameters:
+        - name: migrate_through
+          default: "9999"
+
+      tasks:
+        - task_key: apply_migrations
+          notebook_task:
+            notebook_path: ../src/jobs/run_migrations.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.env_schema}
+              migrate_through: "{{job.parameters.migrate_through}}"
+              geofence_name: ${var.geofence_name}
+              geofence_min_lat: ${var.geofence_min_lat}
+              geofence_max_lat: ${var.geofence_max_lat}
+              geofence_min_lon: ${var.geofence_min_lon}
+              geofence_max_lon: ${var.geofence_max_lon}
+
+        - task_key: bronze_ingest
+          depends_on:
+            - task_key: apply_migrations
+          notebook_task:
+            notebook_path: ../src/jobs/bronze_ingest.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.env_schema}
+              landing_volume: ${var.landing_volume}
+              checkpoints_volume: ${var.checkpoints_volume}
+
+        - task_key: silver_clean
+          depends_on:
+            - task_key: bronze_ingest
+          notebook_task:
+            notebook_path: ../src/jobs/silver_clean.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.env_schema}
+              checkpoints_volume: ${var.checkpoints_volume}
+
+        - task_key: gold_build
+          depends_on:
+            - task_key: silver_clean
+          notebook_task:
+            notebook_path: ../src/jobs/gold_build.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.env_schema}
+              checkpoints_volume: ${var.checkpoints_volume}
+              geofence_name: ${var.geofence_name}
+              geofence_min_lat: ${var.geofence_min_lat}
+              geofence_max_lat: ${var.geofence_max_lat}
+              geofence_min_lon: ${var.geofence_min_lon}
+              geofence_max_lon: ${var.geofence_max_lon}
