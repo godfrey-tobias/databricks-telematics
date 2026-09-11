@@ -21,7 +21,6 @@
 import glob
 import hashlib
 import os
-import re
 import sys
 
 for _candidate in ("../common", "src/common", "./common"):
@@ -87,19 +86,77 @@ print(f"already applied   : {sorted(applied) or '(none — fresh environment)'}"
 
 # COMMAND ----------
 
-# `--` comments are stripped before splitting on `;`. Migrations in this repo
-# deliberately contain no semicolons or `--` inside string literals, which keeps
-# the splitter this simple; anything more complex belongs in its own file.
-COMMENT_RE = re.compile(r"--[^\n]*")
-
 # ALTER TABLE ... ADD COLUMNS has no IF NOT EXISTS. These messages mean the
 # change is already in place, which is success, not failure.
 ALREADY_APPLIED = ("already exists", "already_exists", "fields already exist",
                    "field_already_exists", "duplicate column")
 
+QUOTES = {"'": "'", '"': '"', "`": "`"}
+
 
 def split_statements(sql_text):
-    return [s.strip() for s in COMMENT_RE.sub("", sql_text).split(";") if s.strip()]
+    """Split a migration into statements on top-level semicolons only.
+
+    A regex split on ";" is wrong, and wrong in a way that is easy to miss: a
+    COMMENT string containing a semicolon gets torn in half and the fragment
+    fails with a PARSE_SYNTAX_ERROR pointing at a stray quote, nowhere near the
+    real cause. So this walks the text tracking whether it is inside a string
+    literal (single, double or backtick, with '' escaping) or a comment, and
+    only breaks on a semicolon that is outside both.
+
+    Comments are dropped rather than passed through, so a `--` inside a string
+    survives while a real comment does not.
+    """
+    statements, current = [], []
+    quote = None          # the closing character of the string we are inside
+    line_comment = False
+    block_comment = False
+    i, n = 0, len(sql_text)
+
+    while i < n:
+        char = sql_text[i]
+        nxt = sql_text[i + 1] if i + 1 < n else ""
+
+        if line_comment:
+            if char == "\n":
+                line_comment = False
+                current.append(char)
+            i += 1
+        elif block_comment:
+            if char == "*" and nxt == "/":
+                block_comment = False
+                i += 2
+            else:
+                i += 1
+        elif quote:
+            current.append(char)
+            if char == quote:
+                if nxt == quote:          # '' inside a string is an escaped quote
+                    current.append(nxt)
+                    i += 2
+                    continue
+                quote = None
+            i += 1
+        elif char == "-" and nxt == "-":
+            line_comment = True
+            i += 2
+        elif char == "/" and nxt == "*":
+            block_comment = True
+            i += 2
+        elif char in QUOTES:
+            quote = QUOTES[char]
+            current.append(char)
+            i += 1
+        elif char == ";":
+            statements.append("".join(current))
+            current = []
+            i += 1
+        else:
+            current.append(char)
+            i += 1
+
+    statements.append("".join(current))
+    return [s.strip() for s in statements if s.strip()]
 
 
 def render(sql_text):
