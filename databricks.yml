@@ -104,7 +104,11 @@ targets:
       env_label: test
       pings_batches: 10
       pipeline_schedule_cron: "0 0 * * * ?"
-      pipeline_schedule_status: UNPAUSED
+      # Paused after the evidence run to conserve Free Edition compute, which is
+      # a finite monthly allowance. The cadence above is the intended one; this
+      # is a config value, so resuming is `pipeline_schedule_status: UNPAUSED`
+      # plus a deploy — not a click in the UI.
+      pipeline_schedule_status: PAUSED
 
   # ---------------------------------------------------------------------------
   # prod — deploy-only. `mode: production` blocks the development conveniences
@@ -130,4 +134,6 @@ targets:
       env_label: prod
       pings_batches: 5
       pipeline_schedule_cron: "0 0/15 * * * ?"
-      pipeline_schedule_status: UNPAUSED
+      # See the note on the test target: paused to conserve Free Edition compute.
+      # Every 15 minutes is the intended production cadence.
+      pipeline_schedule_status: PAUSED

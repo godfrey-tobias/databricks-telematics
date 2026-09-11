@@ -176,10 +176,17 @@ databricks bundle validate -t prod && databricks bundle deploy -t prod && databr
 | Schema | `telematics.dev` | `telematics.test` | `telematics.prod` |
 | Landing volume | `/Volumes/telematics/dev/landing` | `.../test/landing` | `.../prod/landing` |
 | Job names | `telematics_medallion_dev` | `..._test` | `..._prod` |
-| Schedule | paused (manual) | hourly | every 15 minutes |
+| Schedule | manual | hourly (`0 0 * * * ?`) | every 15 min (`0 0/15 * * * ?`) |
 | Generated batches | 20 | 10 | 5 |
 | Bundle mode | default (explicit) | default | `production` |
 | Bundle root | user home | user home | restricted home path |
+
+> The test and prod schedules are currently **paused** to conserve Free Edition
+> compute, which is a finite monthly allowance — a no-op run still costs about
+> two minutes of serverless. The cadences above are the intended ones and remain
+> in `databricks.yml`. Resuming is a config change plus a deploy
+> (`pipeline_schedule_status: UNPAUSED`), never a click in the UI — the same
+> rule that applies to everything else in prod.
 
 ## 4. Verify
 
