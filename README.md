@@ -75,6 +75,9 @@ src/
   jobs/gold_build.py            stream-static join -> the two Gold tables
 sql/verify.sql                  the queries worth screenshotting as evidence
 scripts/deploy.{sh,ps1}         validate + deploy + run one target
+scripts/last-error.ps1          pull the real error out of a failed job run
+scripts/query.ps1               run verification SQL from the CLI
+scripts/capture-evidence.ps1    regenerate EVIDENCE.md from the live workspace
 .github/workflows/bundle.yml    validate all targets, deploy dev on main
 ```
 
@@ -87,28 +90,36 @@ scripts/deploy.{sh,ps1}         validate + deploy + run one target
 **b. Databricks CLI** (v0.218+, the Go CLI — `databricks version` must not print
 a Python version).
 
+Authenticate with OAuth — a browser approval, no token to generate or store:
+
 ```bash
-databricks configure --host https://<your-workspace>.cloud.databricks.com
+databricks auth login --host https://<your-workspace>.cloud.databricks.com
 ```
 
 ```bash
 databricks current-user me
 ```
 
+(`databricks configure` with a personal access token also works if you prefer.)
+
 The bundle does not pin `workspace.host`, so it uses your configured profile.
 In a real multi-workspace setup you would pin a distinct host per target; this
 exercise has one workspace, so the environments are separated by schema instead.
 
 **c. Create the catalog — once.** A catalog is a workspace-level object shared by
-all three targets, so it sits outside the bundle. Create it from the CLI, not
-the UI:
+all three targets, so it sits outside the bundle.
+
+On Free Edition `databricks catalogs create` **fails** — the account uses Default
+Storage, and that API wants an explicit managed location. Create it through SQL
+instead, which understands Default Storage (still CLI-driven, nothing clicked):
 
 ```bash
-databricks catalogs create telematics
+databricks api post /api/2.0/sql/statements --json '{"warehouse_id":"<id from: databricks warehouses list>","statement":"CREATE CATALOG IF NOT EXISTS telematics","wait_timeout":"50s"}'
 ```
 
-If your account cannot create a catalog, point the bundle at one you can already
-write to instead — no file edits needed:
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §2.1 for the exact error and a
+PowerShell version. Alternatively, skip the catalog and use one that exists —
+no file edits needed:
 
 ```bash
 databricks bundle deploy -t dev --var="catalog=workspace"
@@ -166,7 +177,7 @@ databricks bundle validate -t prod && databricks bundle deploy -t prod && databr
 | Job names | `telematics_medallion_dev` | `..._test` | `..._prod` |
 | Schedule | paused (manual) | hourly | every 15 minutes |
 | Generated batches | 20 | 10 | 5 |
-| Bundle mode | `development` | default | `production` |
+| Bundle mode | default (explicit) | default | `production` |
 | Bundle root | user home | user home | restricted home path |
 
 ## 4. Verify
@@ -181,41 +192,42 @@ the join carrying driver/depot/region into Gold, and prints the migration ledger
 ## 5. The promotion demo — a column change reaching prod through deploy only
 
 Migration `002_add_geofence_to_gold.sql` adds `in_geofence` and `geofence_name`
-to `gold_truck_current_position` and backfills them. It is the **last commit** in
-this repo, so the promotion is reproducible two ways.
+to `gold_truck_current_position` and backfills them. It was promoted
+dev -> test -> prod on the real workspace; the ledger timestamps in
+[EVIDENCE.md](EVIDENCE.md) are from that run.
 
-**Option A — via git, which is what the real flow looks like.** Deploy the
-commit before the migration to all three targets, then deploy `main` to all
-three:
-
-```bash
-git checkout HEAD~1
-```
-
-```bash
-./scripts/deploy.sh dev --setup && ./scripts/deploy.sh test --setup && ./scripts/deploy.sh prod --setup
-```
-
-```bash
-git checkout main
-```
-
-```bash
-./scripts/deploy.sh dev && ./scripts/deploy.sh test && ./scripts/deploy.sh prod
-```
-
-**Option B — without rewinding git,** using the `migrate_through` job parameter
-(the same idea as Flyway's `target` property):
+**Option A — hold the migration back, then release it.** The runner accepts a
+`migrate_through` job parameter, the same idea as Flyway's `target` property.
+This is exactly reproducible and needs no git gymnastics:
 
 ```bash
 databricks bundle run medallion_job -t dev --params migrate_through=001
 ```
 
+Gold now has 11 columns and the ledger lists only `001`. Then release it:
+
 ```bash
 databricks bundle run medallion_job -t dev
 ```
 
-After each pass, in the target's schema:
+Gold has 13 columns, populated, and the ledger lists `002` with its timestamp.
+Repeat for `test` then `prod`.
+
+**Option B — via git,** which is what the real flow looks like. Find the commit
+that introduced the migration and deploy its parent first:
+
+```bash
+git log --oneline -- src/migrations/002_add_geofence_to_gold.sql
+```
+
+```bash
+git checkout <that-sha>~1 && ./scripts/deploy.sh dev --setup
+```
+
+Then return to `main` and deploy again — the migration is now in the tree, so
+the next run applies it.
+
+### What to check after each pass
 
 ```sql
 DESCRIBE TABLE gold_truck_current_position;         -- the columns appear
