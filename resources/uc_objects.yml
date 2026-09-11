@@ -1,0 +1,31 @@
+# Unity Catalog objects owned by the bundle.
+#
+# The catalog itself is created once per workspace (see README) because a
+# catalog is a workspace-level object shared by all three targets; everything
+# below it is per-target and belongs to the bundle. The tables are NOT here —
+# they are versioned SQL migrations applied by the `apply_migrations` task, so
+# that column changes have the same deploy-and-run path as table creation.
+
+resources:
+  schemas:
+    env:
+      catalog_name: ${var.catalog}
+      name: ${var.env_schema}
+      comment: "Telematics medallion tables for the ${var.env_label} environment. Managed by the `telematics` asset bundle — do not modify by hand."
+
+  volumes:
+    landing:
+      catalog_name: ${var.catalog}
+      # Referencing the schema resource (rather than the variable) makes the
+      # dependency explicit, so the schema is created first on a clean deploy.
+      schema_name: ${resources.schemas.env.name}
+      name: ${var.landing_volume}
+      volume_type: MANAGED
+      comment: "Auto Loader landing zone for raw truck GPS ping files (${var.env_label})."
+
+    checkpoints:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.env.name}
+      name: ${var.checkpoints_volume}
+      volume_type: MANAGED
+      comment: "Structured Streaming checkpoints and Auto Loader schema locations (${var.env_label})."
