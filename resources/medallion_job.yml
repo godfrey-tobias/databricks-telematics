@@ -34,8 +34,8 @@ resources:
           notebook_task:
             notebook_path: ../src/jobs/run_migrations.py
             base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.env_schema}
+              catalog: ${resources.schemas.env.catalog_name}
+              schema: ${resources.schemas.env.name}
               migrate_through: "{{job.parameters.migrate_through}}"
               geofence_name: ${var.geofence_name}
               geofence_min_lat: ${var.geofence_min_lat}
@@ -49,10 +49,10 @@ resources:
           notebook_task:
             notebook_path: ../src/jobs/bronze_ingest.py
             base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.env_schema}
-              landing_volume: ${var.landing_volume}
-              checkpoints_volume: ${var.checkpoints_volume}
+              catalog: ${resources.schemas.env.catalog_name}
+              schema: ${resources.schemas.env.name}
+              landing_volume: ${resources.volumes.landing.name}
+              checkpoints_volume: ${resources.volumes.checkpoints.name}
 
         - task_key: silver_clean
           depends_on:
@@ -60,9 +60,9 @@ resources:
           notebook_task:
             notebook_path: ../src/jobs/silver_clean.py
             base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.env_schema}
-              checkpoints_volume: ${var.checkpoints_volume}
+              catalog: ${resources.schemas.env.catalog_name}
+              schema: ${resources.schemas.env.name}
+              checkpoints_volume: ${resources.volumes.checkpoints.name}
 
         - task_key: gold_build
           depends_on:
@@ -70,9 +70,9 @@ resources:
           notebook_task:
             notebook_path: ../src/jobs/gold_build.py
             base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.env_schema}
-              checkpoints_volume: ${var.checkpoints_volume}
+              catalog: ${resources.schemas.env.catalog_name}
+              schema: ${resources.schemas.env.name}
+              checkpoints_volume: ${resources.volumes.checkpoints.name}
               geofence_name: ${var.geofence_name}
               geofence_min_lat: ${var.geofence_min_lat}
               geofence_max_lat: ${var.geofence_max_lat}

@@ -30,8 +30,8 @@ resources:
           notebook_task:
             notebook_path: ../src/jobs/run_migrations.py
             base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.env_schema}
+              catalog: ${resources.schemas.env.catalog_name}
+              schema: ${resources.schemas.env.name}
               migrate_through: "{{job.parameters.migrate_through}}"
               geofence_name: ${var.geofence_name}
               geofence_min_lat: ${var.geofence_min_lat}
@@ -45,8 +45,8 @@ resources:
           notebook_task:
             notebook_path: ../src/jobs/seed_truck_details.py
             base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.env_schema}
+              catalog: ${resources.schemas.env.catalog_name}
+              schema: ${resources.schemas.env.name}
 
         - task_key: generate_pings
           depends_on:
@@ -54,8 +54,8 @@ resources:
           notebook_task:
             notebook_path: ../src/jobs/generate_pings.py
             base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.env_schema}
-              landing_volume: ${var.landing_volume}
+              catalog: ${resources.schemas.env.catalog_name}
+              schema: ${resources.schemas.env.name}
+              landing_volume: ${resources.volumes.landing.name}
               batches: "{{job.parameters.pings_batches}}"
               sleep_seconds: ${var.pings_sleep_seconds}
